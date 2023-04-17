@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Linq;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -182,7 +184,7 @@ namespace Streamish.Repositories
 
                     DbUtils.AddParameter(cmd, "@Title", video.Title);
                     DbUtils.AddParameter(cmd, "@Description", video.Description);
-                    DbUtils.AddParameter(cmd, "@DateCreated", video.DateCreated);
+                    DbUtils.AddParameter(cmd, "@DateCreated", DateTime.Now);
                     DbUtils.AddParameter(cmd, "@Url", video.Url);
                     DbUtils.AddParameter(cmd, "@UserProfileId", video.UserProfileId);
 
@@ -244,11 +246,15 @@ namespace Streamish.Repositories
               SELECT v.Id, v.Title, v.Description, v.Url, v.DateCreated AS VideoDateCreated, v.UserProfileId,
 
                      up.Name, up.Email, up.DateCreated AS UserProfileDateCreated,
-                     up.ImageUrl AS UserProfileImageUrl
+                     up.ImageUrl AS UserProfileImageUrl,
+
+                c.Id AS CommentId, c.Message, c.UserProfileId AS CommentUserProfileId
                         
                 FROM Video v 
                      JOIN UserProfile up ON v.UserProfileId = up.Id
+                     LEFT JOIN Comment c on c.VideoId = v.id
                WHERE v.Title LIKE @Criterion OR v.Description LIKE @Criterion";
+
 
                     if (sortDescending)
                     {
@@ -267,7 +273,7 @@ namespace Streamish.Repositories
                         var videos = new List<Video>();
                         while (reader.Read())
                         {
-                            videos.Add(new Video()
+                            Video foundVideo = new Video()
                             {
                                 Id = DbUtils.GetInt(reader, "Id"),
                                 Title = DbUtils.GetString(reader, "Title"),
@@ -283,9 +289,45 @@ namespace Streamish.Repositories
                                     DateCreated = DbUtils.GetDateTime(reader, "UserProfileDateCreated"),
                                     ImageUrl = DbUtils.GetString(reader, "UserProfileImageUrl"),
                                 },
-                            });
-                        }
+                                Comments = new List<Comment>()
+                            };
 
+                            if(!videos.Any(v => v.Id == foundVideo.Id))
+                            {
+                                videos.Add(foundVideo);
+                                if (DbUtils.IsNotDbNull(reader, "CommentId"))
+                                {
+                                    foundVideo.Comments.Add(new Comment()
+                                    {
+                                        Id = DbUtils.GetInt(reader, "CommentId"),
+                                        Message = DbUtils.GetString(reader, "Message"),
+                                        VideoId = foundVideo.Id,
+                                        UserProfileId = DbUtils.GetInt(reader, "CommentUserProfileId")
+                                    });
+                                }
+                            }
+                            else
+                            {
+                                foreach (Video v in videos) 
+                                {
+                                    if (v.Id == foundVideo.Id && DbUtils.IsNotDbNull(reader, "CommentId"))
+                                    {
+                                       Comment newComment = new Comment()
+                                        {
+                                            Id = DbUtils.GetInt(reader, "CommentId"),
+                                            Message = DbUtils.GetString(reader, "Message"),
+                                            VideoId = foundVideo.Id,
+                                            UserProfileId = DbUtils.GetInt(reader, "CommentUserProfileId")
+                                        };
+                                        if (!v.Comments.Any(c => c.Id == newComment.Id))
+                                        {
+                                            v.Comments.Add(newComment);
+                                        }
+                                    }
+                                }
+                            }
+
+                        }
                         return videos;
                     }
                 }
